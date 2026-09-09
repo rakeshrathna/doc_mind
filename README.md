@@ -21,7 +21,7 @@ In enterprise environments, invoices arrive in unpredictable formats: rotated sc
 
 While Large Language Models (LLMs) excel at semantic document parsing regardless of layout, LLMs acting alone can occasionally hallucinate numeric values or make minor floating-point calculation errors.
 
-**1-DocMind** solves this problem by coupling **Llama-3.1-8B (via Ollama)** with **Pydantic deterministic schema guardrails** in a **closed-loop self-correction feedback system**. If the LLM generates JSON that violates financial invariants ($\text{quantity} \times \text{unit\_price} \neq \text{amount}$ or $\text{subtotal} + \text{tax} \neq \text{total}$), the exact validation error traceback is fed back into the LLM context, triggering an automated retry loop until the document output is 100% mathematically consistent.
+**1-DocMind** solves this problem by coupling **Llama-3.1-8B (via Ollama)** with **Pydantic deterministic schema guardrails** in a **closed-loop self-correction feedback system**. If the LLM generates JSON that violates financial invariants (`quantity * unit_price != amount` or `subtotal + tax != total`), the exact validation error traceback is fed back into the LLM context, triggering an automated retry loop until the document output is 100% mathematically consistent.
 
 ---
 
@@ -33,7 +33,7 @@ Automated invoice processing faces several critical hurdles:
 2. **Scan Degradation**: Real-world documents suffer from skew, uneven shadows, noise, low resolution, and poor contrast.
 3. **OCR Text Flattening**: Basic OCR tools flatten words across columns into a single line, destroying vertical spacing and line-item associations.
 4. **LLM Hallucinations & Precision Errors**: LLMs can misread digits (e.g. `8` vs `3`) or generate line item totals that do not sum up to the reported subtotal.
-5. **Lack of Self-Healing**: Standard pipelines execute `OCR → LLM → Output` blindly, returning corrupt or mathematically invalid data to downstream databases.
+5. **Lack of Self-Healing**: Standard pipelines execute `OCR -> LLM -> Output` blindly, returning corrupt or mathematically invalid data to downstream databases.
 
 ---
 
@@ -42,13 +42,13 @@ Automated invoice processing faces several critical hurdles:
 **1-DocMind** implements a 10-stage processing pipeline to guarantee reliability, security, and precision:
 
 1. **Upload Security & Payload Validation**: Verifies file extension, enforces size limits (10MB), and verifies image magic bytes using Pillow to reject corrupted files or extension spoofing.
-2. **OpenCV Computer Vision Preprocessing**: Resizes images to safe dimensions ($\le 2500\text{px}$ width), deskews scan rotation via `cv2.minAreaRect`, applies bilateral filtering, and performs adaptive Gaussian binarization.
+2. **OpenCV Computer Vision Preprocessing**: Resizes images to safe dimensions (<= 2500px width), deskews scan rotation via `cv2.minAreaRect`, applies bilateral filtering, and performs adaptive Gaussian binarization.
 3. **Line-Structure Preserving PyTesseract OCR**: Extracts word tokens and groups them by `(block_num, par_num, line_num)` to preserve multi-column line breaks (`\n`).
 4. **Ollama Status & Health Check**: Verifies that the Ollama host is reachable and that `llama3.1:8b` is loaded.
-5. **1-Shot In-Context Prompt Engine**: Prompts Llama-3.1-8B using a strict system prompt and a realistic 1-shot example (`EXAMPLE_IN` $\rightarrow$ `EXAMPLE_OUT`).
+5. **1-Shot In-Context Prompt Engine**: Prompts Llama-3.1-8B using a strict system prompt and a realistic 1-shot example (`EXAMPLE_IN` -> `EXAMPLE_OUT`).
 6. **Robust JSON Parser**: Extracts clean JSON objects from LLM outputs, stripping markdown code blocks (```json) and handling embedded commentary cleanly.
 7. **Pydantic Schema Validation**: Parses raw dictionaries into the `Invoice` schema models.
-8. **Financial Invariants Enforcement**: Mathematically checks line-item amounts ($\pm 0.05$ tolerance), subtotal summation, and subtotal + tax = total.
+8. **Financial Invariants Enforcement**: Mathematically checks line-item amounts (±0.05 tolerance), subtotal summation, and `subtotal + tax = total`.
 9. **Closed-Loop Self-Correction**: On validation failure, appends previous output and Pydantic error tracebacks into the prompt context for up to 2 self-correction retries.
 10. **Final Validated JSON Response**: Returns verified invoice metadata alongside HTTP status codes and response headers (`X-Response-Time-Ms`, `X-Request-ID`).
 
@@ -64,7 +64,7 @@ Automated invoice processing faces several critical hurdles:
 * **Local LLM Privacy**: Uses local Ollama server hosting `llama3.1:8b`, keeping sensitive enterprise financial data on-premise.
 * **Resilient JSON Parsing**: Multi-stage parser handles pure JSON, markdown fences, and embedded commentary without regex crashes.
 * **Closed-Loop Self-Correction**: Automatically feeds Pydantic validation tracebacks back to the LLM for self-correction without losing 1-shot prompt context.
-* **Financial Integrity Invariants**: Enforces $\text{quantity} \times \text{unit\_price} = \text{amount}$, $\sum \text{items} = \text{subtotal}$, and $\text{subtotal} + \text{tax} = \text{total}$ ($\pm 0.05$ float tolerance).
+* **Financial Integrity Invariants**: Enforces `quantity * unit_price = amount`, `sum(line_items) = subtotal`, and `subtotal + tax = total` (±0.05 float tolerance).
 * **Upload Security Safeguards**: File size limits (10MB default), image format magic-byte validation, and temporary file lifecycle cleanup on Windows.
 * **Domain Exception Hierarchy**: Structured domain error classes (`DocMindError`, `TesseractUnavailableError`, `OllamaUnavailableError`, etc.) return clean HTTP status codes without leaking stack traces.
 * **Performance Timing Metrics**: End-to-end and step-by-step latency tracking returned in API headers and embedded JSON outputs.
@@ -190,9 +190,9 @@ flowchart TD
 * **Windows Cleanup**: Writes to `tempfile.NamedTemporaryFile(delete=False)`, closes file handles before writing, and unlinks temporary disk files in a `finally` block.
 
 ### Stage 2 — Image Preprocessing (`preprocess.py`)
-* **Dimension Safety**: If image dimensions exceed $2500 \times 3500\text{px}$, downscales proportionally before processing.
+* **Dimension Safety**: If image dimensions exceed 2500 x 3500px, downscales proportionally before processing.
 * **Upscaling**: Resizes narrow images to a minimum width of 1200px using bicubic interpolation (`INTER_CUBIC`).
-* **Deskew Algorithm**: Computes inverted pixel coordinates `coords = np.column_stack(np.where(inv > 0))`, transposes coordinates to $(x, y)$ order `coords_xy = coords[:, ::-1]`, and calculates minimum-area bounding rectangle angle via `cv2.minAreaRect(coords_xy)`. Warps affine rotation around image center.
+* **Deskew Algorithm**: Computes inverted pixel coordinates `coords = np.column_stack(np.where(inv > 0))`, transposes coordinates to `(x, y)` order `coords_xy = coords[:, ::-1]`, and calculates minimum-area bounding rectangle angle via `cv2.minAreaRect(coords_xy)`. Warps affine rotation around image center.
 * **Bilateral Denoising**: Filters high-frequency pixel noise while preserving crisp text character edges (`cv2.bilateralFilter(gray, 9, 75, 75)`).
 * **Adaptive Thresholding**: Applies Gaussian adaptive binarization (`cv2.adaptiveThreshold` block size 31, C 15) to handle shadows.
 
@@ -212,12 +212,12 @@ flowchart TD
 4. **Fallback Error Handling**: Throws `LLMParseError` if no valid JSON structure can be recovered.
 
 ### Stage 6 & 7 — Pydantic Schema & Financial Validation (`schema.py`)
-* **`LineItem` Model**: Fields `description`, `quantity`, `unit_price`, `amount`. Validates $\text{round}(\text{quantity} \times \text{unit\_price}, 2) = \text{amount}$ ($\pm 0.05$ tolerance).
+* **`LineItem` Model**: Fields `description`, `quantity`, `unit_price`, `amount`. Validates `round(quantity * unit_price, 2) == amount` (±0.05 tolerance).
 * **`Invoice` Model**: Fields `vendor`, `invoice_number`, `invoice_date`, `currency`, `line_items`, `subtotal`, `tax`, `total`.
 * **Currency Normalization**: `validate_currency` mode="before" handles `None` or non-string inputs safely, defaulting to `"INR"` and uppercase-truncating strings.
 * **Financial Invariants**:
-  $$\text{subtotal} = \sum \text{line\_items.amount} \quad (\pm 0.05 \text{ tolerance})$$
-  $$\text{total} = \text{subtotal} + \text{tax} \quad (\pm 0.05 \text{ tolerance})$$
+  * `subtotal = sum(line_items.amount)` (±0.05 tolerance)
+  * `total = subtotal + tax` (±0.05 tolerance)
 
 ### Stage 8 — Closed-Loop Self-Correction (`extract.py`)
 * If Pydantic raises a `ValidationError`, the error message (e.g. `subtotal 300.0 + tax 54.0 = 354.0 != total 400.0`) is captured.
@@ -438,7 +438,7 @@ Consider a scenario where OCR text contains noisy digits and the LLM initially o
 ```
 
 1. **Pydantic Validation Check**: `Invoice(**data)` raises `ValueError("subtotal 300.0 + tax 54.0 = 354.0 != total 450.0")`.
-2. **Error Feedback Feedback Prompt**: The error message is appended to the user prompt along with the previous invalid JSON payload.
+2. **Error Feedback Prompt**: The error message is appended to the user prompt along with the previous invalid JSON payload.
 3. **ATTEMPT 2 LLM Self-Correction**: The LLM reads the error feedback, re-evaluates its calculation, and corrects `total` to `354.0`.
 4. **Validation Pass**: Pydantic validation succeeds and returns valid JSON with `"attempts": 2`.
 
@@ -460,10 +460,10 @@ Preprocessing latency was empirically benchmarked across OpenCV denoising algori
 
 ## 15. Complexity Analysis
 
-* **Image Preprocessing**: $\mathcal{O}(W \times H)$ where $W, H$ are image dimensions. Dimension bounds ($\le 2500\text{px}$) cap maximum memory and compute costs.
-* **OCR Line Reconstruction**: $\mathcal{O}(N_{\text{words}} \log N_{\text{words}})$ to group and format bounding box coordinates into structured lines.
-* **Pydantic Validation**: $\mathcal{O}(N_{\text{items}})$ linear check across invoice line items.
-* **LLM Inference**: $\mathcal{O}(K \times N_{\text{tokens}}^2)$ where $K \le 3$ represents the maximum number of attempts ($1 + \text{max\_retries}$). Autoregressive transformer inference dominates overall request latency ($\sim 70\% - 85\%$ of end-to-end time).
+* **Image Preprocessing**: `O(W * H)` where `W, H` are image dimensions. Dimension bounds (<= 2500px) cap maximum memory and compute costs.
+* **OCR Line Reconstruction**: `O(N_words * log(N_words))` to group and format bounding box coordinates into structured lines.
+* **Pydantic Validation**: `O(N_items)` linear check across invoice line items.
+* **LLM Inference**: `O(K * N_tokens^2)` where `K <= 3` represents the maximum number of attempts (`1 + max_retries`). Autoregressive transformer inference dominates overall request latency (~70% - 85% of end-to-end time).
 
 ---
 
@@ -524,13 +524,13 @@ The test suite in `tests/` contains **29 unit and integration tests**:
 ## 20. Viva / Interview Frequently Asked Questions
 
 1. **Q: What is the core innovation of 1-DocMind?**  
-   *A*: Closed-loop AI self-correction. Instead of trusting LLM outputs blindly, Pydantic guardrails validate financial invariants ($\text{qty} \times \text{price} = \text{amount}$, $\sum \text{items} = \text{subtotal}$, $\text{subtotal} + \text{tax} = \text{total}$). If validation fails, error tracebacks are fed back to the LLM to auto-correct the response.
+   *A*: Closed-loop AI self-correction. Instead of trusting LLM outputs blindly, Pydantic guardrails validate financial invariants (`qty * price = amount`, `sum(items) = subtotal`, `subtotal + tax = total`). If validation fails, error tracebacks are fed back to the LLM to auto-correct the response.
 
 2. **Q: Why preserve OCR line structure instead of joining all words with spaces?**  
    *A*: Invoices rely on line breaks to separate items, columns, and subtotal rows. Joining all words into a single line destroys spatial layout context, making LLM table parsing error-prone.
 
 3. **Q: How does the image deskewing algorithm work?**  
-   *A*: `deskew()` in `preprocess.py` inverts image binary values, extracts non-zero pixel coordinates, converts them to $(x, y)$ order, calculates min-area bounding rectangle angle via `cv2.minAreaRect()`, and applies an affine rotation matrix around the image center.
+   *A*: `deskew()` in `preprocess.py` inverts image binary values, extracts non-zero pixel coordinates, converts them to `(x, y)` order, calculates min-area bounding rectangle angle via `cv2.minAreaRect()`, and applies an affine rotation matrix around the image center.
 
 4. **Q: Why use local Ollama instead of Cloud LLMs like GPT-4?**  
    *A*: Data privacy, zero API costs, and full offline execution for sensitive corporate financial documents.
