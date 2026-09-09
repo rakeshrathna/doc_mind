@@ -1,0 +1,13 @@
+[
+  {
+    "image": "samples/invoice_01.png",
+    "expected": {
+      "vendor": "ACME TOOLS",
+      "invoice_number": "INV-77",
+      "invoice_date": "2024-03-02",
+      "subtotal": 300.0,
+      "tax": 54.0,
+      "total": 354.0
+    }
+  }
+]
